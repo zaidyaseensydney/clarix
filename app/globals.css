@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #f0f7ff;
+  --color-foreground: #0f172a;
+  --color-primary: #0d9488;
+  --color-primary-foreground: #ffffff;
+  --color-primary-dark: #0f766e;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+  --color-border: #e2e8f0;
+  --color-input: #e2e8f0;
+  --color-ring: #0d9488;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --radius: 0.75rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 40%, #f0fdf4 100%);
+  background-attachment: fixed;
+  color: var(--color-foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+@keyframes hero-gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.hero-gradient {
+  background: linear-gradient(
+    135deg,
+    #0d9488,
+    #0891b2,
+    #6366f1,
+    #0d9488
+  );
+  background-size: 300% 300%;
+  animation: hero-gradient 8s ease infinite;
+}
+
+@keyframes bar-grow {
+  from {
+    transform: scaleY(0);
+    transform-origin: bottom;
+  }
+  to {
+    transform: scaleY(1);
+    transform-origin: bottom;
+  }
+}
+
+.bar-animate {
+  animation: bar-grow 0.6s ease-out forwards;
+}
+
+@keyframes progress-fill {
+  from {
+    width: 0%;
+  }
+}
+
+.progress-fill {
+  animation: progress-fill 0.8s ease-out forwards;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fade-in 0.4s ease-out forwards;
+}
+
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.typing-dot {
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Prose styles for react-markdown in chat */
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3 {
+  font-weight: 600;
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+.prose-chat h1 { font-size: 1.125rem; }
+.prose-chat h2 { font-size: 1rem; }
+.prose-chat h3 { font-size: 0.95rem; }
+.prose-chat p { margin: 0.25rem 0; }
+.prose-chat ul, .prose-chat ol { padding-left: 1.25rem; margin: 0.25rem 0; }
+.prose-chat li { margin: 0.1rem 0; }
+.prose-chat code {
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+  font-size: 0.875em;
+}
+.prose-chat pre {
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 6px;
+  padding: 0.75rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+.prose-chat pre code { background: none; padding: 0; }
+.prose-chat strong { font-weight: 600; }
+.prose-chat em { font-style: italic; }
