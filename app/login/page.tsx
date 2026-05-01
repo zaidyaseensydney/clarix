@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { GraduationCap, Eye, EyeOff, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -15,14 +14,14 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { loginAction, forgotPasswordAction } from "@/app/actions/auth";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({});
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotLoading, setForgotLoading] = useState(false);
@@ -41,19 +40,36 @@ export default function LoginPage() {
     e.preventDefault();
     if (!validate()) return;
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1200));
+
+    const formData = new FormData();
+    formData.set("email", email);
+    formData.set("password", password);
+
+    const result = await loginAction(formData);
     setLoading(false);
-    router.push("/dashboard");
+
+    if (result?.error) {
+      setErrors({ form: result.error });
+    }
+    // On success, loginAction calls redirect() — no further action needed
   }
 
   async function handleForgotPassword(e: React.FormEvent) {
     e.preventDefault();
     if (!forgotEmail) return;
     setForgotLoading(true);
-    await new Promise((r) => setTimeout(r, 900));
+
+    const formData = new FormData();
+    formData.set("email", forgotEmail);
+    const result = await forgotPasswordAction(formData);
     setForgotLoading(false);
-    setForgotOpen(false);
-    toast.success("Reset link sent! Check your inbox.");
+
+    if (result?.error) {
+      toast.error(result.error);
+    } else {
+      setForgotOpen(false);
+      toast.success("Reset link sent! Check your inbox.");
+    }
   }
 
   return (
@@ -85,7 +101,7 @@ export default function LoginPage() {
             </ul>
           </div>
           <p className="text-teal-200 text-sm">
-            Trusted by 50,000+ Australian students and their families.
+            Trusted by Australian students and their families.
           </p>
         </div>
 
@@ -98,6 +114,12 @@ export default function LoginPage() {
             </div>
 
             <form onSubmit={handleLogin} className="space-y-5" noValidate>
+              {errors.form && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                  {errors.form}
+                </div>
+              )}
+
               <div>
                 <Label htmlFor="email">Email</Label>
                 <Input

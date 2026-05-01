@@ -9,16 +9,22 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
-import { MOCK_CHILDREN, PARENT_CHILD_STATS } from "@/lib/mock-data";
+import { createClient } from "@/lib/supabase/client";
 import type { Message } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+interface ParentChild {
+  id: string;
+  child_name: string;
+  year_level: number;
+  state: string;
+}
+
 const SUGGESTION_CHIPS = [
-  "How is my child doing overall?",
-  "What can I do to help at home?",
-  "Explain linear equations to me",
-  "What should we focus on this week?",
+  "How can I support my child at home?",
+  "What study habits help most at this year level?",
+  "How do I keep my child motivated?",
+  "What should we focus on this term?",
 ];
 
 function TypingIndicator() {
@@ -38,60 +44,78 @@ function TypingIndicator() {
   );
 }
 
-function ParentTutorChat() {
+function ParentAdvisorChat() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const childId = searchParams.get("child") ?? MOCK_CHILDREN[0].id;
+  const childIdParam = searchParams.get("child");
   const initialQ = searchParams.get("q");
 
-  const child = MOCK_CHILDREN.find((c) => c.id === childId) ?? MOCK_CHILDREN[0];
-  const stats = PARENT_CHILD_STATS[childId as keyof typeof PARENT_CHILD_STATS] ?? PARENT_CHILD_STATS["child-1"];
+  const [child, setChild] = useState<ParentChild | null>(null);
+  const [allChildren, setAllChildren] = useState<ParentChild[]>([]);
+  const [loadingChild, setLoadingChild] = useState(true);
+  const [contextOpen, setContextOpen] = useState(false);
 
-  const strongSubject = stats.subjects.reduce((a, b) => a.progress > b.progress ? a : b);
-  const weakSubject = stats.subjects.reduce((a, b) => a.progress < b.progress ? a : b);
-
-  const systemContext = {
-    childName: child.name,
-    yearLevel: child.yearLevel,
-    state: child.state,
-    strongSubject: strongSubject.subject,
-    strongPct: strongSubject.progress,
-    weakSubject: weakSubject.subject,
-    weakPct: weakSubject.progress,
-    recentTopics: "Linear equations, Ecosystems",
-    weakAreas: stats.weakAreas.join(", "),
-    streak: 7,
-    weeklyHours: stats.timeSpent,
-  };
-
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "greeting",
-      role: "assistant",
-      content: `Hi! I'm your Clarix Parent Advisor. I'm here to help you support **${child.name}** (Year ${child.yearLevel}, ${child.state}) at home.\n\nWhat would you like to know?`,
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [chipsVisible, setChipsVisible] = useState(true);
-  const [contextOpen, setContextOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hasSentInitial = useRef(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    async function loadChildren() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setLoadingChild(false); return; }
+
+      const { data: rows } = await supabase
+        .from("parent_children")
+        .select("*")
+        .eq("parent_id", session.user.id)
+        .order("created_at");
+
+      const list = (rows ?? []) as ParentChild[];
+      setAllChildren(list);
+
+      const selected = childIdParam
+        ? list.find((c) => c.id === childIdParam) ?? list[0]
+        : list[0];
+
+      setChild(selected ?? null);
+      setLoadingChild(false);
+    }
+
+    loadChildren();
+  }, [childIdParam]);
+
+  useEffect(() => {
+    if (!child) return;
+
+    setMessages([
+      {
+        id: "greeting",
+        role: "assistant",
+        content: `Hi! I'm your Clarix Parent Advisor. I'm here to help you support **${child.child_name}** (Year ${child.year_level}, ${child.state}) at home.\n\nWhat would you like to know?`,
+        timestamp: new Date(),
+      },
+    ]);
+  }, [child]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
   useEffect(() => {
-    if (initialQ && !hasSentInitial.current) {
+    if (initialQ && child && !hasSentInitial.current && messages.length > 0) {
       hasSentInitial.current = true;
       sendMessage(initialQ);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [child, messages.length]);
 
   async function sendMessage(text?: string) {
+    if (!child) return;
     const content = (text ?? input).trim();
     if (!content || loading) return;
     setInput("");
@@ -106,6 +130,20 @@ function ParentTutorChat() {
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
 
+    const parentContext = {
+      childName: child.child_name,
+      yearLevel: child.year_level,
+      state: child.state,
+      strongSubject: "Not yet determined",
+      strongPct: 0,
+      weakSubject: "Not yet determined",
+      weakPct: 0,
+      recentTopics: "No sessions completed yet",
+      weakAreas: "No data yet",
+      streak: 0,
+      weeklyHours: "0h",
+    };
+
     try {
       const history = [...messages, userMsg].map((m) => ({
         role: m.role,
@@ -117,7 +155,7 @@ function ParentTutorChat() {
         body: JSON.stringify({
           messages: history,
           mode: "parent",
-          parentContext: systemContext,
+          parentContext,
         }),
       });
       const data = await res.json();
@@ -137,6 +175,27 @@ function ParentTutorChat() {
     setLoading(false);
   }
 
+  if (loadingChild) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <div className="animate-spin h-8 w-8 rounded-full border-2 border-teal-600 border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!child) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center px-4">
+        <div className="text-4xl">👨‍👩‍👧</div>
+        <h2 className="text-xl font-semibold text-slate-900">No children added yet</h2>
+        <p className="text-slate-500 text-sm max-w-sm">
+          Add a child on the parent dashboard before using the advisor.
+        </p>
+        <Button onClick={() => router.push("/parent")}>Go to Dashboard</Button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 h-[calc(100vh-4rem)] overflow-hidden">
       {/* LEFT: Chat */}
@@ -151,26 +210,23 @@ function ParentTutorChat() {
           </button>
           <div>
             <h1 className="font-semibold text-white">Parent Advisor</h1>
-            <p className="text-xs text-teal-300">Supporting {child.name}&apos;s learning</p>
+            <p className="text-xs text-teal-300">Supporting {child.child_name}&apos;s learning</p>
           </div>
 
-          {/* Mobile context toggle */}
           <button
             className="ml-auto lg:hidden flex items-center gap-1 text-xs text-teal-200 bg-teal-700 rounded-lg px-3 py-1.5"
             onClick={() => setContextOpen(!contextOpen)}
           >
-            {child.name} {contextOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            {child.child_name} {contextOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           </button>
         </div>
 
         {/* Mobile collapsible context */}
         {contextOpen && (
-          <div className="lg:hidden bg-teal-50 border-b border-teal-200 px-4 py-3 space-y-2 fade-in">
-            <p className="text-xs font-semibold text-teal-700">{child.name} — Year {child.yearLevel}, {child.state}</p>
-            <div className="flex gap-2 flex-wrap">
-              <Badge variant="success" className="text-xs">✅ {strongSubject.subject} {strongSubject.progress}%</Badge>
-              <Badge variant="warning" className="text-xs">📍 {weakSubject.subject} {weakSubject.progress}%</Badge>
-            </div>
+          <div className="lg:hidden bg-teal-50 border-b border-teal-200 px-4 py-3 fade-in">
+            <p className="text-xs font-semibold text-teal-700">
+              {child.child_name} — Year {child.year_level}, {child.state}
+            </p>
           </div>
         )}
 
@@ -205,7 +261,6 @@ function ParentTutorChat() {
             </div>
           ))}
 
-          {/* Suggestion chips */}
           {chipsVisible && messages.length === 1 && (
             <div className="flex flex-wrap gap-2 fade-in mt-2">
               {SUGGESTION_CHIPS.map((chip) => (
@@ -256,67 +311,53 @@ function ParentTutorChat() {
       <div className="hidden lg:flex w-72 xl:w-80 flex-col border-l border-slate-200 bg-white overflow-y-auto">
         <div className="p-5 space-y-5">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Child Context</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Child Profile</p>
             <div className="flex items-center gap-3 p-3 bg-teal-50 rounded-xl">
               <div className="h-10 w-10 rounded-full bg-teal-600 flex items-center justify-center text-white font-bold text-sm">
-                {child.name[0]}
+                {child.child_name[0]?.toUpperCase()}
               </div>
               <div>
-                <p className="font-semibold text-slate-900">{child.name}</p>
-                <p className="text-xs text-slate-500">Year {child.yearLevel} · {child.state}</p>
+                <p className="font-semibold text-slate-900">{child.child_name}</p>
+                <p className="text-xs text-slate-500">Year {child.year_level} · {child.state}</p>
               </div>
             </div>
           </div>
 
-          <Separator />
-
-          <div className="space-y-3">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">This Week</p>
-            {[
-              { label: "Time studied", value: stats.timeSpent },
-              { label: "Sessions", value: String(stats.sessions) },
-            ].map((s) => (
-              <div key={s.label} className="flex justify-between text-sm">
-                <span className="text-slate-500">{s.label}</span>
-                <span className="font-medium text-slate-900">{s.value}</span>
-              </div>
-            ))}
-          </div>
-
-          <Separator />
-
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Subject Performance</p>
-            {stats.subjects.map((sub) => (
-              <div key={sub.subject} className="space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-600">{sub.subject}</span>
-                  <span className="font-medium text-slate-800">{sub.progress}%</span>
-                </div>
-                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className={cn(
-                      "h-full rounded-full transition-all duration-500",
-                      sub.progress >= 75 ? "bg-emerald-500" : sub.progress >= 50 ? "bg-amber-500" : "bg-red-400"
-                    )}
-                    style={{ width: `${sub.progress}%` }}
-                  />
+          {allChildren.length > 1 && (
+            <>
+              <Separator />
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Switch Child</p>
+                <div className="space-y-1">
+                  {allChildren.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => router.push(`/parent/tutor?child=${c.id}`)}
+                      className={cn(
+                        "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors",
+                        c.id === child.id
+                          ? "bg-teal-50 text-teal-700 font-medium"
+                          : "text-slate-600 hover:bg-slate-50"
+                      )}
+                    >
+                      <div className="h-6 w-6 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 text-xs font-bold shrink-0">
+                        {c.child_name[0]?.toUpperCase()}
+                      </div>
+                      {c.child_name}
+                    </button>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+            </>
+          )}
 
           <Separator />
 
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Needs Attention</p>
-            <div className="flex flex-wrap gap-1.5">
-              {stats.weakAreas.map((wa) => (
-                <Badge key={wa} variant="warning" className="text-xs">
-                  {wa}
-                </Badge>
-              ))}
-            </div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Session Stats</p>
+            <p className="text-sm text-slate-400">
+              Activity data will appear here as {child.child_name} uses Clarix.
+            </p>
           </div>
         </div>
       </div>
@@ -327,7 +368,7 @@ function ParentTutorChat() {
 export default function ParentTutorPage() {
   return (
     <Suspense fallback={<div className="flex-1 flex items-center justify-center text-slate-400">Loading advisor…</div>}>
-      <ParentTutorChat />
+      <ParentAdvisorChat />
     </Suspense>
   );
 }

@@ -3,8 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SiteHeader } from "@/components/clarix/site-header";
 import { SiteFooter } from "@/components/clarix/site-footer";
-import { PersonaSwitcher } from "@/components/clarix/persona-switcher";
-import { ClarixProvider } from "@/lib/context";
 import { Toaster } from "sonner";
 
 const geistSans = Geist({
@@ -31,15 +29,12 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
-        <ClarixProvider>
-          <SiteHeader />
-          <main className="flex-1 flex flex-col">
-            {children}
-          </main>
-          <SiteFooter />
-          <PersonaSwitcher />
-          <Toaster richColors position="top-right" duration={3000} />
-        </ClarixProvider>
+        <SiteHeader />
+        <main className="flex-1 flex flex-col">
+          {children}
+        </main>
+        <SiteFooter />
+        <Toaster richColors position="top-right" duration={3000} />
       </body>
     </html>
   );

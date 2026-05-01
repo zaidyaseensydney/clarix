@@ -5,96 +5,127 @@ import { useRouter } from "next/navigation";
 import {
   Clock,
   BookOpen,
-  TrendingUp,
-  TrendingDown,
-  Minus,
   Plus,
+  Users,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  MOCK_CHILDREN,
-  PARENT_ACTIVITY_FEED,
-  AI_INSIGHTS,
-  PARENT_CHILD_STATS,
-} from "@/lib/mock-data";
+import { createClient } from "@/lib/supabase/client";
+import type { AustralianState } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const SUBJECT_COLORS: Record<string, string> = {
-  Maths: "bg-teal-500",
-  English: "bg-purple-500",
-  Science: "bg-emerald-500",
-  History: "bg-amber-500",
-};
-
-const GRADE_COLORS: Record<string, string> = {
-  A: "text-emerald-600",
-  B: "text-teal-600",
-  C: "text-amber-600",
-  D: "text-red-600",
-};
-
-function AnimatedBar({ progress }: { progress: number }) {
-  const [width, setWidth] = useState(0);
-  const barClass =
-    progress >= 75
-      ? "bg-emerald-500"
-      : progress >= 50
-      ? "bg-amber-500"
-      : "bg-red-400";
-
-  useEffect(() => {
-    const t = setTimeout(() => setWidth(progress), 100);
-    return () => clearTimeout(t);
-  }, [progress]);
-
-  return (
-    <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden flex-1">
-      <div
-        className={cn("h-full rounded-full transition-all duration-700 ease-out", barClass)}
-        style={{ width: `${width}%` }}
-      />
-    </div>
-  );
+interface ParentChild {
+  id: string;
+  child_name: string;
+  year_level: number;
+  state: string;
+  parent_id: string;
 }
+
+const STATES: AustralianState[] = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"];
 
 export default function ParentPage() {
   const router = useRouter();
-  const [activeChild, setActiveChild] = useState(MOCK_CHILDREN[0].id);
-  const [activityDetail, setActivityDetail] = useState<(typeof PARENT_ACTIVITY_FEED)[0] | null>(null);
-  const [encourageInsight, setEncourageInsight] = useState<(typeof AI_INSIGHTS)[0] | null>(null);
-  const [encourageMessage, setEncourageMessage] = useState("Hey Jake! I noticed you haven't studied recently. How about a quick Clarix session today? I'm proud of how hard you've been working! 💪");
+  const [parentId, setParentId] = useState<string | null>(null);
+  const [parentName, setParentName] = useState("");
+  const [children, setChildren] = useState<ParentChild[]>([]);
+  const [activeChild, setActiveChild] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [addChildOpen, setAddChildOpen] = useState(false);
   const [newChildName, setNewChildName] = useState("");
   const [newChildYear, setNewChildYear] = useState(8);
+  const [newChildState, setNewChildState] = useState<AustralianState | "">("");
+  const [saving, setSaving] = useState(false);
 
-  const child = MOCK_CHILDREN.find((c) => c.id === activeChild) ?? MOCK_CHILDREN[0];
+  useEffect(() => {
+    const supabase = createClient();
 
-  function goToParentTutor(question?: string) {
-    if (question) {
-      router.push(`/parent/tutor?q=${encodeURIComponent(question)}&child=${child.id}`);
-    } else {
-      router.push(`/parent/tutor?child=${child.id}`);
+    async function load() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setLoading(false); return; }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .eq("id", session.user.id)
+        .single();
+
+      if (profile) {
+        setParentId(profile.id);
+        setParentName(profile.full_name?.split(" ")[0] ?? "");
+
+        const { data: childRows } = await supabase
+          .from("parent_children")
+          .select("*")
+          .eq("parent_id", profile.id)
+          .order("created_at");
+
+        const childList = childRows ?? [];
+        setChildren(childList);
+        if (childList.length > 0) setActiveChild(childList[0].id);
+      }
+      setLoading(false);
     }
+
+    load();
+  }, []);
+
+  function goToAdvisor(childId?: string, question?: string) {
+    const params = new URLSearchParams();
+    if (childId) params.set("child", childId);
+    if (question) params.set("q", encodeURIComponent(question));
+    router.push(`/parent/tutor?${params.toString()}`);
   }
 
-  function handleAddChild() {
-    toast.success(`${newChildName || "Child"} added successfully!`);
+  async function handleAddChild() {
+    if (!newChildName.trim() || !newChildState || !parentId) return;
+    setSaving(true);
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("parent_children")
+      .insert({
+        parent_id: parentId,
+        child_name: newChildName.trim(),
+        year_level: newChildYear,
+        state: newChildState,
+      })
+      .select()
+      .single();
+
+    setSaving(false);
+
+    if (error) {
+      toast.error("Could not add child. Please try again.");
+      return;
+    }
+
+    const updated = [...children, data as ParentChild];
+    setChildren(updated);
+    setActiveChild(data.id);
     setAddChildOpen(false);
     setNewChildName("");
+    setNewChildState("");
+    toast.success(`${newChildName} added successfully!`);
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <div className="animate-spin h-8 w-8 rounded-full border-2 border-teal-600 border-t-transparent" />
+      </div>
+    );
   }
 
   return (
@@ -103,44 +134,89 @@ export default function ParentPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Parent Dashboard</h1>
-            <p className="text-slate-500 mt-1">Monitor your children&apos;s learning progress.</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
+              {parentName ? `${parentName}'s Dashboard` : "Parent Dashboard"}
+            </h1>
+            <p className="text-slate-500 mt-1">Monitor your children&apos;s learning journey.</p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setAddChildOpen(true)}>
               <Plus className="h-4 w-4" />
               Add child
             </Button>
-            <Button onClick={() => goToParentTutor()}>
-              Ask Parent Tutor
+            <Button onClick={() => goToAdvisor(activeChild ?? undefined)}>
+              Ask Parent Advisor
             </Button>
           </div>
         </div>
 
-        {/* Child tabs */}
-        <Tabs value={activeChild} onValueChange={setActiveChild}>
-          <TabsList>
-            {MOCK_CHILDREN.map((c) => (
-              <TabsTrigger key={c.id} value={c.id}>
-                {c.name} (Y{c.yearLevel})
-              </TabsTrigger>
-            ))}
-          </TabsList>
+        {children.length === 0 ? (
+          /* Empty state */
+          <Card>
+            <CardContent className="pt-12 pb-12">
+              <div className="flex flex-col items-center text-center gap-4">
+                <div className="h-16 w-16 rounded-full bg-teal-50 flex items-center justify-center">
+                  <Users className="h-8 w-8 text-teal-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900 mb-2">No children added yet</h2>
+                  <p className="text-slate-500 text-sm max-w-sm">
+                    Add your child&apos;s details to get started. You can track their learning progress and get personalised advice from the Parent Advisor.
+                  </p>
+                </div>
+                <Button onClick={() => setAddChildOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  Add your first child
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          /* Children tabs */
+          <Tabs value={activeChild ?? ""} onValueChange={setActiveChild}>
+            <TabsList>
+              {children.map((c) => (
+                <TabsTrigger key={c.id} value={c.id}>
+                  {c.child_name} (Y{c.year_level})
+                </TabsTrigger>
+              ))}
+            </TabsList>
 
-          {MOCK_CHILDREN.map((c) => {
-            const cStats = PARENT_CHILD_STATS[c.id as keyof typeof PARENT_CHILD_STATS];
-            if (!cStats) return null;
-            return (
-              <TabsContent key={c.id} value={c.id} className="space-y-6">
-                {/* Stats row */}
+            {children.map((child) => (
+              <TabsContent key={child.id} value={child.id} className="space-y-6">
+                {/* Child profile header */}
+                <Card>
+                  <CardContent className="pt-5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="h-12 w-12 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-bold text-lg">
+                          {child.child_name[0]?.toUpperCase()}
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-slate-900 text-lg">{child.child_name}</h3>
+                          <p className="text-sm text-slate-500">Year {child.year_level} · {child.state}</p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToAdvisor(child.id)}
+                      >
+                        Ask about {child.child_name}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Stats row — empty state */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <Card>
                     <CardContent className="pt-5">
                       <div className="flex items-start justify-between">
                         <div>
                           <p className="text-xs text-slate-400 mb-1">Time spent learning</p>
-                          <p className="text-2xl font-bold text-slate-900">{cStats.timeSpent}</p>
-                          <p className="text-xs text-emerald-600 font-medium mt-0.5">{cStats.timeChange} vs last week</p>
+                          <p className="text-2xl font-bold text-slate-900">—</p>
+                          <p className="text-xs text-slate-400 mt-0.5">No sessions yet</p>
                         </div>
                         <Clock className="h-5 w-5 text-teal-500" />
                       </div>
@@ -151,8 +227,8 @@ export default function ParentPage() {
                       <div className="flex items-start justify-between">
                         <div>
                           <p className="text-xs text-slate-400 mb-1">Sessions completed</p>
-                          <p className="text-2xl font-bold text-slate-900">{cStats.sessions}</p>
-                          <p className="text-xs text-slate-400 mt-0.5">avg {cStats.avgSession} each</p>
+                          <p className="text-2xl font-bold text-slate-900">0</p>
+                          <p className="text-xs text-slate-400 mt-0.5">—</p>
                         </div>
                         <BookOpen className="h-5 w-5 text-purple-500" />
                       </div>
@@ -161,177 +237,61 @@ export default function ParentPage() {
                   <Card>
                     <CardContent className="pt-5">
                       <p className="text-xs text-slate-400 mb-2">Areas needing attention</p>
-                      <div className="space-y-1">
-                        {cStats.weakAreas.map((wa) => (
-                          <Badge key={wa} variant="warning" className="mr-1 mb-1 text-xs">
-                            {wa}
-                          </Badge>
-                        ))}
-                      </div>
+                      <p className="text-sm text-slate-400 py-1">
+                        Will appear after quizzes are completed.
+                      </p>
                     </CardContent>
                   </Card>
                 </div>
 
-                {/* Weekly report card */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Weekly Report — {c.name}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {cStats.subjects.map((sub) => (
-                      <button
-                        key={sub.subject}
-                        className="w-full"
-                        onClick={() => goToParentTutor(`How is ${c.name} doing in ${sub.subject}?`)}
-                      >
-                        <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors">
-                          <div className={cn("h-2.5 w-2.5 rounded-full shrink-0", SUBJECT_COLORS[sub.subject])} />
-                          <span className="text-sm font-medium text-slate-800 w-16 text-left shrink-0">
-                            {sub.subject}
-                          </span>
-                          <span className={cn("text-lg font-bold w-8 text-left shrink-0", GRADE_COLORS[sub.grade])}>
-                            {sub.grade}
-                          </span>
-                          <span className="text-slate-400 shrink-0">
-                            {sub.trend === "↑" ? (
-                              <TrendingUp className="h-4 w-4 text-emerald-500" />
-                            ) : sub.trend === "↓" ? (
-                              <TrendingDown className="h-4 w-4 text-red-400" />
-                            ) : (
-                              <Minus className="h-4 w-4 text-slate-400" />
-                            )}
-                          </span>
-                          <AnimatedBar progress={sub.progress} />
-                          <span className="text-sm font-medium text-slate-600 w-8 text-right shrink-0">
-                            {sub.progress}%
-                          </span>
-                          <span className="text-xs text-slate-400 shrink-0 hidden sm:block">
-                            {sub.sessions} sessions
-                          </span>
-                        </div>
-                      </button>
-                    ))}
-                  </CardContent>
-                </Card>
-
-                {/* Activity feed + AI insights */}
+                {/* Activity + Insights — empty states */}
                 <div className="grid lg:grid-cols-2 gap-6">
-                  {/* Activity feed */}
                   <Card>
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base">Recent Activity</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-1">
-                      {PARENT_ACTIVITY_FEED.filter((a) => a.child === c.name).map((activity) => (
-                        <button
-                          key={activity.id}
-                          onClick={() => setActivityDetail(activity)}
-                          className="w-full flex items-start gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors text-left"
-                        >
-                          <span className="text-lg shrink-0">{activity.icon}</span>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-slate-800">
-                              <span className="font-medium">{activity.child}</span> {activity.text}
-                            </p>
-                            <p className="text-xs text-slate-400 mt-0.5">{activity.time}</p>
-                          </div>
-                        </button>
-                      ))}
+                    <CardContent>
+                      <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+                        <BookOpen className="h-10 w-10 text-slate-200" />
+                        <p className="text-sm text-slate-500">
+                          {child.child_name}&apos;s activity will appear here once they start using Clarix.
+                        </p>
+                      </div>
                     </CardContent>
                   </Card>
 
-                  {/* AI insights */}
                   <Card>
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base">AI Insights</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-3">
-                      {AI_INSIGHTS.filter((ins) => ins.child === c.name).map((insight) => (
-                        <div key={insight.id} className="flex flex-col gap-2 p-4 rounded-xl bg-slate-50 border border-slate-100">
-                          <div className="flex items-start gap-3">
-                            <span className="text-xl">{insight.icon}</span>
-                            <p className="text-sm text-slate-700">{insight.text}</p>
-                          </div>
-                          {insight.showEncouragement && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="self-start text-xs"
-                              onClick={() => setEncourageInsight(insight)}
-                            >
-                              Send encouragement
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                      {AI_INSIGHTS.filter((ins) => ins.child === c.name).length === 0 && (
-                        <p className="text-sm text-slate-400 text-center py-4">No insights yet — check back after more sessions.</p>
-                      )}
+                    <CardContent>
+                      <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+                        <div className="text-3xl">💡</div>
+                        <p className="text-sm text-slate-500">
+                          Insights will appear as {child.child_name} completes sessions.
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => goToAdvisor(child.id, `What advice do you have for supporting ${child.child_name} in Year ${child.year_level}?`)}
+                        >
+                          Ask the Advisor
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 </div>
               </TabsContent>
-            );
-          })}
-        </Tabs>
+            ))}
+          </Tabs>
+        )}
       </div>
-
-      {/* Activity detail modal */}
-      <Dialog open={!!activityDetail} onOpenChange={(o) => !o && setActivityDetail(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Session Detail</DialogTitle>
-          </DialogHeader>
-          {activityDetail && (
-            <div className="space-y-3">
-              <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-xl">
-                <span className="text-2xl">{activityDetail.icon}</span>
-                <div>
-                  <p className="font-medium text-slate-800">
-                    {activityDetail.child} {activityDetail.text}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1">{activityDetail.time}</p>
-                </div>
-              </div>
-              <p className="text-sm text-slate-600">{activityDetail.detail}</p>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Encouragement modal */}
-      <Dialog open={!!encourageInsight} onOpenChange={(o) => !o && setEncourageInsight(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Send Encouragement</DialogTitle>
-            <DialogDescription>
-              Send a message to motivate {encourageInsight?.child}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Textarea
-              value={encourageMessage}
-              onChange={(e) => setEncourageMessage(e.target.value)}
-              className="min-h-[100px]"
-            />
-            <Button
-              className="w-full"
-              onClick={() => {
-                setEncourageInsight(null);
-                toast.success("Message sent!");
-              }}
-            >
-              Send message
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Add child modal */}
       <Dialog open={addChildOpen} onOpenChange={setAddChildOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Add Another Child</DialogTitle>
+            <DialogTitle>Add a Child</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -362,8 +322,31 @@ export default function ParentPage() {
                 ))}
               </div>
             </div>
-            <Button className="w-full" onClick={handleAddChild} disabled={!newChildName.trim()}>
-              Add child
+            <div>
+              <Label>State</Label>
+              <div className="grid grid-cols-4 gap-1.5 mt-1.5">
+                {STATES.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setNewChildState(s)}
+                    className={cn(
+                      "h-10 rounded-lg text-xs font-medium border transition-colors",
+                      newChildState === s
+                        ? "border-teal-500 bg-teal-600 text-white"
+                        : "border-slate-200 text-slate-600 hover:border-teal-300"
+                    )}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Button
+              className="w-full"
+              onClick={handleAddChild}
+              disabled={!newChildName.trim() || !newChildState || saving}
+            >
+              {saving ? "Adding…" : "Add child"}
             </Button>
           </div>
         </DialogContent>

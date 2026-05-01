@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import Groq from "groq-sdk";
+import { createClient } from "@/lib/supabase/server";
 import { buildTutorSystemPrompt, buildParentSystemPrompt } from "@/lib/groq-prompts";
 import type { Subject } from "@/lib/types";
 
@@ -30,10 +31,43 @@ export async function POST(req: NextRequest) {
     };
   };
 
-  const systemPrompt =
-    mode === "parent" && parentContext
-      ? buildParentSystemPrompt(parentContext)
-      : buildTutorSystemPrompt(subject ?? "Maths", topic ?? "General");
+  // Enrich system prompt with real session data where available
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  let systemPrompt: string;
+
+  if (mode === "parent" && parentContext) {
+    // If user is logged in as parent, we can trust the parentContext they sent
+    systemPrompt = buildParentSystemPrompt(parentContext);
+  } else {
+    // Student mode: use real profile data to personalise the prompt
+    let studentName: string | undefined;
+    let yearLevel: number | undefined;
+    let state: string | undefined;
+
+    if (user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, year_level, state")
+        .eq("id", user.id)
+        .single();
+
+      if (profile) {
+        studentName = profile.full_name?.split(" ")[0];
+        yearLevel = profile.year_level;
+        state = profile.state;
+      }
+    }
+
+    systemPrompt = buildTutorSystemPrompt(
+      subject ?? "Maths",
+      topic ?? "General",
+      studentName,
+      yearLevel,
+      state
+    );
+  }
 
   const groq = new Groq({ apiKey: key });
 

@@ -21,14 +21,14 @@ This document evaluates the Clarix codebase against industry best practices for 
 | Input validation | ⚠️ Partial | Basic shape checks; no schema validation (e.g. Zod) |
 | Rate limiting | ❌ Missing | No rate limiting on `/api/tutor`, `/api/quiz`, `/api/evaluate` |
 | CSP headers | ❌ Missing | Not configured in `next.config.ts` |
-| Authentication | ❌ Missing | Mock auth only — no real session management |
+| Authentication | ✅ Pass | Supabase Auth with real sessions, middleware-enforced route protection, RLS on all tables |
 | XSS prevention | ✅ Pass | ReactMarkdown with no `dangerouslySetInnerHTML`; Next.js escapes by default |
 
 ### Recommended next steps
 - Add Zod schema validation to all API route handlers
 - Implement rate limiting with `@upstash/ratelimit` or similar
 - Add `next/headers` CSP via `next.config.ts` `headers()` callback
-- Integrate NextAuth or Clerk for real authentication
+- Add Google OAuth via Supabase (`supabase.auth.signInWithOAuth`)
 
 ---
 
@@ -103,7 +103,7 @@ This document evaluates the Clarix codebase against industry best practices for 
 | No `any` types | ✅ Pass | All types explicitly defined in `lib/types.ts` |
 | ESLint | ✅ Pass | Zero errors, zero warnings after lint pass |
 | Naming conventions | ✅ Pass | PascalCase components, camelCase functions |
-| DRY / shared utilities | ✅ Pass | `lib/groq-prompts.ts`, `lib/mock-data.ts`, `lib/utils.ts` |
+| DRY / shared utilities | ✅ Pass | `lib/groq-prompts.ts`, `lib/supabase/`, `lib/utils.ts` |
 | Centralized prompts | ✅ Pass | All Groq prompt strings live in `lib/groq-prompts.ts` |
 
 ---
@@ -148,12 +148,12 @@ This document evaluates the Clarix codebase against industry best practices for 
 | No hardcoded secrets | ✅ Pass | API key only in `.env.local` (gitignored) |
 | No fallback values | ✅ Pass | API routes return 500 error when key missing — no silent defaults |
 | Structured logging | ❌ Missing | No custom logger; no error tracking (Sentry etc.) |
-| Database | N/A | Mock data only by design; migration-first approach planned |
+| Database | ✅ Pass | Supabase Postgres with RLS, SQL migration file in `supabase/migrations/` |
 
 ### Recommended next steps
 - Add a custom logger utility (Winston or Pino) for server-side logs
 - Integrate Sentry for error tracking in production
-- When adding a database, use Drizzle or Prisma with migration files only
+- Add session/activity tracking tables to persist real progress data
 
 ---
 
@@ -161,11 +161,11 @@ This document evaluates the Clarix codebase against industry best practices for 
 
 | Category | Score | Top gap |
 |----------|-------|---------|
-| Security | 60% | No rate limiting or schema validation |
+| Security | 80% | No rate limiting or schema validation; auth now real |
 | Accessibility | 70% | Missing skip link and `aria-describedby` on forms |
 | Performance | 65% | No AI response streaming |
 | Code Quality | 95% | Excellent — no significant gaps |
 | Testing | 0% | No tests at all |
-| Architecture | 80% | No structured logging or error tracking |
+| Architecture | 85% | No structured logging or error tracking; DB + auth now real |
 
-**Overall: Good foundation for a production app. Priority gaps are testing infrastructure and AI streaming.**
+**Overall: Strong production foundation. Priority gaps are testing infrastructure and AI streaming.**

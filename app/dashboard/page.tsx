@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Flame, Clock, BookOpen, Trophy, Lock } from "lucide-react";
@@ -20,14 +20,8 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  MOCK_STUDENT,
-  SUBJECT_PROGRESS,
-  RECENT_SESSIONS,
-  WEAK_AREAS,
-  ACHIEVEMENTS,
-} from "@/lib/mock-data";
-import type { Achievement } from "@/lib/types";
+import { createClient } from "@/lib/supabase/client";
+import type { StudentProfile, Achievement } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const SUBJECT_COLORS: Record<string, string> = {
@@ -37,13 +31,6 @@ const SUBJECT_COLORS: Record<string, string> = {
   History: "text-amber-700",
 };
 
-const SUBJECT_BAR_COLORS: Record<string, string> = {
-  Maths: "bg-teal-600",
-  English: "bg-purple-600",
-  Science: "bg-emerald-600",
-  History: "bg-amber-600",
-};
-
 const SUBJECT_BG: Record<string, string> = {
   Maths: "bg-teal-50 border-teal-100",
   English: "bg-purple-50 border-purple-100",
@@ -51,15 +38,82 @@ const SUBJECT_BG: Record<string, string> = {
   History: "bg-amber-50 border-amber-100",
 };
 
+const SUBJECT_ICONS: Record<string, string> = {
+  Maths: "📐",
+  English: "📖",
+  Science: "🔬",
+  History: "🏛️",
+};
+
+const ALL_SUBJECTS = ["Maths", "English", "Science", "History"];
+
+const ACHIEVEMENT_DEFINITIONS: Achievement[] = [
+  {
+    id: "first-session",
+    title: "First Session",
+    icon: "🎓",
+    unlocked: false,
+    description: "Complete your very first tutoring session.",
+  },
+  {
+    id: "seven-day-streak",
+    title: "7 Day Streak",
+    icon: "🔥",
+    unlocked: false,
+    description: "Study 7 days in a row to unlock.",
+  },
+  {
+    id: "ten-quizzes",
+    title: "10 Quizzes",
+    icon: "📝",
+    unlocked: false,
+    description: "Complete 10 quizzes to unlock.",
+  },
+  {
+    id: "perfect-score",
+    title: "Perfect Score",
+    icon: "⭐",
+    unlocked: false,
+    description: "Score 100% on a quiz to unlock.",
+  },
+];
+
 export default function DashboardPage() {
   const router = useRouter();
+  const [profile, setProfile] = useState<StudentProfile | null>(null);
+  const [loading, setLoading] = useState(true);
   const [selectedBadge, setSelectedBadge] = useState<Achievement | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) { setLoading(false); return; }
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", session.user.id)
+        .single();
+      if (data) setProfile(data as StudentProfile);
+      setLoading(false);
+    });
+  }, []);
 
   function goToTutor(subject: string, topic?: string) {
     const params = new URLSearchParams({ subject });
     if (topic) params.set("topic", topic);
     router.push(`/tutor?${params.toString()}`);
   }
+
+  if (loading) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <div className="animate-spin h-8 w-8 rounded-full border-2 border-teal-600 border-t-transparent" />
+      </div>
+    );
+  }
+
+  const displayName = profile?.full_name?.split(" ")[0] ?? "there";
+  const displaySubjects = profile?.subjects?.length ? profile.subjects : ALL_SUBJECTS;
 
   return (
     <TooltipProvider>
@@ -68,45 +122,39 @@ export default function DashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
-              Welcome back, {MOCK_STUDENT.name}! 👋
+              Welcome back, {displayName}! 👋
             </h1>
-            <p className="text-slate-500 mt-1">Here&apos;s how you&apos;re tracking this week.</p>
+            <p className="text-slate-500 mt-1">
+              {profile
+                ? `Year ${profile.year_level} · ${profile.state}`
+                : "Ready to start learning?"}
+            </p>
           </div>
-          <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
-            <Flame className="h-5 w-5 text-orange-500" />
-            <span className="font-bold text-orange-700">7</span>
-            <span className="text-sm text-orange-600">day streak</span>
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+            <Flame className="h-5 w-5 text-slate-400" />
+            <span className="text-sm text-slate-500">Start your streak today</span>
           </div>
         </div>
 
-        {/* Weekly summary */}
+        {/* Welcome banner */}
         <Card className="bg-gradient-to-r from-teal-600 to-teal-700 border-none">
           <CardContent className="pt-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <p className="text-teal-100 text-sm font-medium mb-1">Weekly Summary</p>
+                <p className="text-teal-100 text-sm font-medium mb-1">Your Learning Journey</p>
                 <h2 className="text-xl font-bold text-white">
-                  Great week, {MOCK_STUDENT.name}! 🎉
+                  Let&apos;s get started, {displayName}! 🚀
                 </h2>
                 <p className="text-teal-100 mt-1">
-                  You studied <span className="text-white font-semibold">4h 23m</span> across{" "}
-                  <span className="text-white font-semibold">3 subjects</span> this week.
+                  Pick a subject below and begin your first session with your AI tutor.
                 </p>
               </div>
-              <div className="flex items-center gap-3 text-center">
-                <div className="bg-white/10 rounded-xl p-3">
-                  <p className="text-2xl font-bold text-white">11</p>
-                  <p className="text-xs text-teal-100">Sessions</p>
-                </div>
-                <div className="bg-white/10 rounded-xl p-3">
-                  <p className="text-2xl font-bold text-white">8</p>
-                  <p className="text-xs text-teal-100">Quizzes</p>
-                </div>
-                <div className="bg-white/10 rounded-xl p-3">
-                  <p className="text-2xl font-bold text-white">74%</p>
-                  <p className="text-xs text-teal-100">Avg score</p>
-                </div>
-              </div>
+              <Button
+                className="bg-white text-teal-700 hover:bg-white/90 shrink-0"
+                onClick={() => goToTutor("Maths")}
+              >
+                Start Learning
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -115,37 +163,26 @@ export default function DashboardPage() {
         <div>
           <h2 className="text-lg font-semibold text-slate-900 mb-4">Your Subjects</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {SUBJECT_PROGRESS.map((sp) => (
+            {displaySubjects.map((subject) => (
               <Card
-                key={sp.subject}
-                className={cn("border cursor-pointer hover:shadow-md transition-shadow", SUBJECT_BG[sp.subject])}
-                onClick={() => goToTutor(sp.subject, sp.quickTopic)}
+                key={subject}
+                className={cn("border cursor-pointer hover:shadow-md transition-shadow", SUBJECT_BG[subject])}
+                onClick={() => goToTutor(subject)}
               >
                 <CardContent className="pt-5 pb-4">
                   <div className="flex justify-between items-start mb-3">
-                    <h3 className={cn("font-semibold", SUBJECT_COLORS[sp.subject])}>
-                      {sp.subject}
+                    <h3 className={cn("font-semibold", SUBJECT_COLORS[subject])}>
+                      {subject}
                     </h3>
-                    <span className={cn("text-sm font-bold", SUBJECT_COLORS[sp.subject])}>
-                      {sp.percent}%
-                    </span>
+                    <span className="text-xl">{SUBJECT_ICONS[subject]}</span>
                   </div>
-                  {/* Progress bar */}
-                  <div className="h-2 bg-white/70 rounded-full mb-3 overflow-hidden">
-                    <div
-                      className={cn("h-full rounded-full progress-fill", SUBJECT_BAR_COLORS[sp.subject])}
-                      style={{ width: `${sp.percent}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-slate-500 mb-3">
-                    Up next: <span className="font-medium text-slate-700">{sp.quickTopic}</span>
-                  </p>
+                  <p className="text-xs text-slate-500 mb-3">No sessions yet</p>
                   <Button
                     size="sm"
                     className="w-full"
                     onClick={(e) => {
                       e.stopPropagation();
-                      goToTutor(sp.subject, sp.quickTopic);
+                      goToTutor(subject);
                     }}
                   >
                     Start
@@ -156,9 +193,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Bottom row: Recent sessions + Weak areas */}
+        {/* Bottom row: Recent sessions + Explore */}
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* Recent sessions */}
+          {/* Recent sessions — empty state */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
@@ -166,45 +203,20 @@ export default function DashboardPage() {
                 Recent Sessions
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {RECENT_SESSIONS.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => goToTutor(s.subject, s.topic)}
-                  className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors group"
-                >
-                  <div className="flex items-center gap-3">
-                    <Badge
-                      className={cn(
-                        "text-xs",
-                        s.subject === "Maths"
-                          ? "bg-teal-100 text-teal-700 border-0"
-                          : s.subject === "English"
-                          ? "bg-purple-100 text-purple-700 border-0"
-                          : s.subject === "Science"
-                          ? "bg-emerald-100 text-emerald-700 border-0"
-                          : "bg-amber-100 text-amber-700 border-0"
-                      )}
-                    >
-                      {s.subject}
-                    </Badge>
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-slate-800">{s.topic}</p>
-                      <p className="text-xs text-slate-400">{s.date}</p>
-                    </div>
-                  </div>
-                  <span className="text-xs text-slate-400 group-hover:text-teal-600 transition-colors">
-                    {s.duration}
-                  </span>
-                </button>
-              ))}
-              <Button variant="ghost" className="w-full text-teal-600 hover:text-teal-700 hover:bg-teal-50" asChild>
-                <Link href="/progress">View all activity →</Link>
-              </Button>
+            <CardContent>
+              <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+                <BookOpen className="h-10 w-10 text-slate-200" />
+                <p className="text-sm text-slate-500">
+                  Your sessions will appear here once you start learning.
+                </p>
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/tutor">Start your first session</Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
-          {/* Areas to strengthen */}
+          {/* Areas to strengthen — empty state */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
@@ -212,31 +224,21 @@ export default function DashboardPage() {
                 Areas to Strengthen
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {WEAK_AREAS.map((wa) => (
-                <div
-                  key={wa.topic}
-                  className="flex items-center justify-between p-3 rounded-xl bg-orange-50 border border-orange-100"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-slate-800">{wa.topic}</p>
-                    <p className="text-xs text-slate-500">{wa.subject} · {wa.score}% correct</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => goToTutor(wa.subject, wa.topic)}
-                    className="text-xs border-orange-300 text-orange-700 hover:bg-orange-100"
-                  >
-                    Review
-                  </Button>
-                </div>
-              ))}
+            <CardContent>
+              <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+                <Trophy className="h-10 w-10 text-slate-200" />
+                <p className="text-sm text-slate-500">
+                  Complete quizzes to identify areas for improvement.
+                </p>
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/progress">View Progress</Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Achievement badges */}
+        {/* Achievements */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -246,43 +248,29 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-4">
-              {ACHIEVEMENTS.map((badge) =>
-                badge.unlocked ? (
-                  <button
-                    key={badge.id}
-                    onClick={() => setSelectedBadge(badge)}
-                    className="flex flex-col items-center gap-2 p-4 rounded-xl bg-amber-50 border border-amber-100 hover:shadow-md transition-shadow min-w-[80px]"
-                  >
-                    <span className="text-3xl">{badge.icon}</span>
-                    <span className="text-xs font-medium text-amber-800 text-center">
-                      {badge.title}
-                    </span>
-                  </button>
-                ) : (
-                  <Tooltip key={badge.id}>
-                    <TooltipTrigger asChild>
-                      <div className="flex flex-col items-center gap-2 p-4 rounded-xl bg-slate-50 border border-slate-100 opacity-60 min-w-[80px] cursor-default">
-                        <div className="relative">
-                          <span className="text-3xl grayscale opacity-40">{badge.icon}</span>
-                          <Lock className="absolute -bottom-1 -right-1 h-3.5 w-3.5 text-slate-400" />
-                        </div>
-                        <span className="text-xs font-medium text-slate-400 text-center">
-                          {badge.title}
-                        </span>
+              {ACHIEVEMENT_DEFINITIONS.map((badge) => (
+                <Tooltip key={badge.id}>
+                  <TooltipTrigger asChild>
+                    <div className="flex flex-col items-center gap-2 p-4 rounded-xl bg-slate-50 border border-slate-100 opacity-60 min-w-[80px] cursor-default">
+                      <div className="relative">
+                        <span className="text-3xl grayscale opacity-40">{badge.icon}</span>
+                        <Lock className="absolute -bottom-1 -right-1 h-3.5 w-3.5 text-slate-400" />
                       </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{badge.description}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )
-              )}
+                      <span className="text-xs font-medium text-slate-400 text-center">
+                        {badge.title}
+                      </span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{badge.description}</p>
+                  </TooltipContent>
+                </Tooltip>
+              ))}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Badge detail modal */}
       <Dialog open={!!selectedBadge} onOpenChange={(o) => !o && setSelectedBadge(null)}>
         <DialogContent className="max-w-sm text-center">
           <DialogHeader>
@@ -296,9 +284,6 @@ export default function DashboardPage() {
               <span className="text-6xl">{selectedBadge.icon}</span>
               <h3 className="text-xl font-bold text-slate-900">{selectedBadge.title}</h3>
               <p className="text-slate-500 text-sm">{selectedBadge.description}</p>
-              {selectedBadge.unlockedDate && (
-                <Badge variant="secondary">Unlocked {selectedBadge.unlockedDate}</Badge>
-              )}
             </div>
           )}
         </DialogContent>

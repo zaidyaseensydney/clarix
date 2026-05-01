@@ -1,7 +1,21 @@
 import type { Subject, QuestionType } from "./types";
 
-export function buildTutorSystemPrompt(subject: Subject, topic: string): string {
-  return `You are Clarix, a friendly and encouraging AI tutor for Australian students. You are helping with ${subject}, topic: ${topic}.
+export function buildTutorSystemPrompt(
+  subject: Subject,
+  topic: string,
+  studentName?: string,
+  yearLevel?: number,
+  state?: string
+): string {
+  const studentContext = [
+    studentName && `Student name: ${studentName}`,
+    yearLevel && `Year level: ${yearLevel}`,
+    state && `State: ${state}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  return `You are Clarix, a friendly and encouraging AI tutor for Australian students. You are helping with ${subject}, topic: ${topic}.${studentContext ? `\n${studentContext}.` : ""}
 Never give direct answers, guide with hints and questions. Use simple Australian English.
 Be warm, patient and encouraging. Keep responses concise and focused on the topic.
 Format any mathematical expressions clearly. Use markdown for structure when helpful.`;

@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { GraduationCap, CheckCircle, User, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { signupAction } from "@/app/actions/auth";
 import type { AustralianState, Subject } from "@/lib/types";
 
 type UserType = "student" | "parent";
@@ -15,6 +15,12 @@ type UserType = "student" | "parent";
 const STATES: AustralianState[] = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"];
 const SUBJECTS: Subject[] = ["Maths", "English", "Science", "History"];
 const YEAR_LEVELS = Array.from({ length: 12 }, (_, i) => i + 1);
+
+interface ChildEntry {
+  name: string;
+  year_level: number;
+  state: AustralianState | "";
+}
 
 function StepIndicator({ step, total }: { step: number; total: number }) {
   return (
@@ -48,7 +54,6 @@ function StepIndicator({ step, total }: { step: number; total: number }) {
 }
 
 export default function SignupPage() {
-  const router = useRouter();
   const [step, setStep] = useState(1);
   const [userType, setUserType] = useState<UserType | null>(null);
   const [name, setName] = useState("");
@@ -57,12 +62,12 @@ export default function SignupPage() {
   const [yearLevel, setYearLevel] = useState<number>(10);
   const [state, setState] = useState<AustralianState | "">("");
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [childName, setChildName] = useState("");
-  const [childYear, setChildYear] = useState<number>(7);
-  const [childState, setChildState] = useState<AustralianState | "">("");
-  const [extraChildren, setExtraChildren] = useState<Array<{ name: string; year: number }>>([]);
+  const [children, setChildren] = useState<ChildEntry[]>([
+    { name: "", year_level: 7, state: "" },
+  ]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState("");
 
   const totalSteps = 3;
 
@@ -70,6 +75,20 @@ export default function SignupPage() {
     setSubjects((prev) =>
       prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]
     );
+  }
+
+  function updateChild(index: number, field: keyof ChildEntry, value: string | number) {
+    setChildren((prev) =>
+      prev.map((c, i) => (i === index ? { ...c, [field]: value } : c))
+    );
+  }
+
+  function removeChild(index: number) {
+    setChildren((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function addChild() {
+    setChildren((prev) => [...prev, { name: "", year_level: 7, state: "" }]);
   }
 
   function validateStep2() {
@@ -83,11 +102,54 @@ export default function SignupPage() {
     return Object.keys(e).length === 0;
   }
 
+  function validateStep3Student() {
+    if (!state) {
+      setErrors({ state: "Please select your state." });
+      return false;
+    }
+    return true;
+  }
+
+  function validateStep3Parent() {
+    const firstChild = children[0];
+    if (!firstChild.name.trim() || !firstChild.state) {
+      setErrors({ child: "Please enter your child's name and state." });
+      return false;
+    }
+    return true;
+  }
+
   async function handleFinish() {
+    setFormError("");
+    if (userType === "student" && !validateStep3Student()) return;
+    if (userType === "parent" && !validateStep3Parent()) return;
+
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1500));
+
+    const formData = new FormData();
+    formData.set("role", userType!);
+    formData.set("full_name", name.trim());
+    formData.set("email", email);
+    formData.set("password", password);
+
+    if (userType === "student") {
+      formData.set("year_level", String(yearLevel));
+      formData.set("state", state);
+      formData.set("subjects", JSON.stringify(subjects));
+    } else {
+      const validChildren = children
+        .filter((c) => c.name.trim() && c.state)
+        .map((c) => ({ name: c.name.trim(), year_level: c.year_level, state: c.state }));
+      formData.set("children", JSON.stringify(validChildren));
+    }
+
+    const result = await signupAction(formData);
     setLoading(false);
-    router.push(userType === "parent" ? "/parent" : "/dashboard");
+
+    if (result?.error) {
+      setFormError(result.error);
+    }
+    // On success, signupAction calls redirect()
   }
 
   return (
@@ -102,7 +164,7 @@ export default function SignupPage() {
         </div>
         <div>
           <h2 className="text-3xl font-bold text-white mb-4 leading-tight">
-            Join thousands of Australian students learning smarter.
+            Join Australian students learning smarter.
           </h2>
           <ul className="space-y-3">
             {[
@@ -118,7 +180,7 @@ export default function SignupPage() {
           </ul>
         </div>
         <p className="text-teal-200 text-sm">
-          Trusted by 50,000+ Australian students and their families.
+          Trusted by Australian students and their families.
         </p>
       </div>
 
@@ -131,6 +193,12 @@ export default function SignupPage() {
           </div>
 
           <StepIndicator step={step} total={totalSteps} />
+
+          {formError && (
+            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+              {formError}
+            </div>
+          )}
 
           {/* Step 1: User type */}
           {step === 1 && (
@@ -156,6 +224,7 @@ export default function SignupPage() {
                   <p className="text-sm text-slate-500">I want to learn and get tutoring</p>
                 </div>
               </button>
+
               <button
                 onClick={() => setUserType("parent")}
                 className={cn(
@@ -176,6 +245,7 @@ export default function SignupPage() {
                   <p className="text-sm text-slate-500">I want to monitor my child&apos;s progress</p>
                 </div>
               </button>
+
               <Button
                 className="w-full mt-4"
                 disabled={!userType}
@@ -198,6 +268,7 @@ export default function SignupPage() {
                   value={name}
                   onChange={(e) => { setName(e.target.value); setErrors({ ...errors, name: "" }); }}
                   className="mt-1.5"
+                  autoComplete="name"
                 />
                 {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
               </div>
@@ -210,6 +281,7 @@ export default function SignupPage() {
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); setErrors({ ...errors, email: "" }); }}
                   className="mt-1.5"
+                  autoComplete="email"
                 />
                 {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
               </div>
@@ -222,6 +294,7 @@ export default function SignupPage() {
                   value={password}
                   onChange={(e) => { setPassword(e.target.value); setErrors({ ...errors, password: "" }); }}
                   className="mt-1.5"
+                  autoComplete="new-password"
                 />
                 {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
               </div>
@@ -232,7 +305,7 @@ export default function SignupPage() {
             </div>
           )}
 
-          {/* Step 3: Student specific */}
+          {/* Step 3: Student profile */}
           {step === 3 && userType === "student" && (
             <div className="space-y-5">
               <h2 className="text-lg font-semibold text-slate-800 mb-4">Your learning profile</h2>
@@ -273,6 +346,7 @@ export default function SignupPage() {
                     </button>
                   ))}
                 </div>
+                {errors.state && <p className="text-red-500 text-xs mt-1">{errors.state}</p>}
               </div>
               <div>
                 <Label>Subjects (select all that apply)</Label>
@@ -310,80 +384,83 @@ export default function SignupPage() {
             </div>
           )}
 
-          {/* Step 3: Parent specific */}
+          {/* Step 3: Parent — children */}
           {step === 3 && userType === "parent" && (
             <div className="space-y-5">
               <h2 className="text-lg font-semibold text-slate-800 mb-4">Your child&apos;s details</h2>
-              <div>
-                <Label>Child&apos;s name</Label>
-                <Input
-                  placeholder="Child's name"
-                  value={childName}
-                  onChange={(e) => setChildName(e.target.value)}
-                  className="mt-1.5"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Year level</Label>
-                  <div className="grid grid-cols-3 gap-1 mt-1.5">
-                    {[7, 8, 9, 10, 11, 12].map((y) => (
-                      <button
-                        key={y}
-                        onClick={() => setChildYear(y)}
-                        className={cn(
-                          "h-10 rounded-lg text-sm font-medium border transition-colors",
-                          childYear === y
-                            ? "border-teal-500 bg-teal-600 text-white"
-                            : "border-slate-200 text-slate-600 hover:border-teal-300"
-                        )}
-                      >
-                        {y}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <Label>State</Label>
-                  <div className="grid grid-cols-2 gap-1 mt-1.5">
-                    {STATES.map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => setChildState(s)}
-                        className={cn(
-                          "h-10 rounded-lg text-xs font-medium border transition-colors",
-                          childState === s
-                            ? "border-teal-500 bg-teal-600 text-white"
-                            : "border-slate-200 text-slate-600 hover:border-teal-300"
-                        )}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
 
-              {/* Extra children */}
-              {extraChildren.length > 0 && (
-                <div className="space-y-2">
-                  <Label>Additional children</Label>
-                  {extraChildren.map((c, i) => (
-                    <div key={i} className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl">
-                      <span className="text-sm text-slate-700 flex-1">{c.name} — Year {c.year}</span>
+              {children.map((child, idx) => (
+                <div key={idx} className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-slate-700">
+                      {children.length > 1 ? `Child ${idx + 1}` : "Child"}
+                    </p>
+                    {children.length > 1 && (
                       <button
-                        onClick={() => setExtraChildren((prev) => prev.filter((_, j) => j !== i))}
+                        onClick={() => removeChild(idx)}
                         className="text-slate-400 hover:text-slate-600"
                       >
                         <X className="h-4 w-4" />
                       </button>
+                    )}
+                  </div>
+                  <div>
+                    <Label>Name</Label>
+                    <Input
+                      placeholder="Child's name"
+                      value={child.name}
+                      onChange={(e) => updateChild(idx, "name", e.target.value)}
+                      className="mt-1.5"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Year level</Label>
+                      <div className="grid grid-cols-3 gap-1 mt-1.5">
+                        {[7, 8, 9, 10, 11, 12].map((y) => (
+                          <button
+                            key={y}
+                            onClick={() => updateChild(idx, "year_level", y)}
+                            className={cn(
+                              "h-10 rounded-lg text-sm font-medium border transition-colors",
+                              child.year_level === y
+                                ? "border-teal-500 bg-teal-600 text-white"
+                                : "border-slate-200 text-slate-600 hover:border-teal-300"
+                            )}
+                          >
+                            {y}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  ))}
+                    <div>
+                      <Label>State</Label>
+                      <div className="grid grid-cols-2 gap-1 mt-1.5">
+                        {STATES.map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => updateChild(idx, "state", s)}
+                            className={cn(
+                              "h-10 rounded-lg text-xs font-medium border transition-colors",
+                              child.state === s
+                                ? "border-teal-500 bg-teal-600 text-white"
+                                : "border-slate-200 text-slate-600 hover:border-teal-300"
+                            )}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              )}
+              ))}
+
+              {errors.child && <p className="text-red-500 text-xs">{errors.child}</p>}
+
               <button
                 type="button"
-                onClick={() => setExtraChildren((prev) => [...prev, { name: `Child ${prev.length + 2}`, year: 8 }])}
+                onClick={addChild}
                 className="text-sm text-teal-600 hover:underline flex items-center gap-1"
               >
                 + Add another child
@@ -391,7 +468,11 @@ export default function SignupPage() {
 
               <div className="flex gap-3 pt-2">
                 <Button variant="outline" className="flex-1" onClick={() => setStep(2)}>Back</Button>
-                <Button className="flex-1" onClick={handleFinish} disabled={loading || !childName || !childState}>
+                <Button
+                  className="flex-1"
+                  onClick={handleFinish}
+                  disabled={loading || !children[0]?.name.trim() || !children[0]?.state}
+                >
                   {loading ? (
                     <span className="flex items-center gap-2">
                       <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
